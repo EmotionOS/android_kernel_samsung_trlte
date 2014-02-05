@@ -114,20 +114,20 @@ static bool check_for_delayed_trigger(struct idletimer_tg *timer,
 	return state;
 }
 
-static void notify_netlink_uevent(const char *label, struct idletimer_tg *timer)
+static void notify_netlink_uevent(const char *iface, struct idletimer_tg *timer)
 {
-	char label_msg[NLMSG_MAX_SIZE];
+	char iface_msg[NLMSG_MAX_SIZE];
 	char state_msg[NLMSG_MAX_SIZE];
 	char timestamp_msg[NLMSG_MAX_SIZE];
 	char uid_msg[NLMSG_MAX_SIZE];
-	char *envp[] = { iface_msg, label_msg, state_msg, timestamp_msg, uid_msg, NULL };
+	char *envp[] = { iface_msg, state_msg, timestamp_msg, uid_msg, NULL };
 	int res;
 	struct timespec ts;
 	uint64_t time_ns;
 	bool state;
 
-	res = snprintf(label_msg, NLMSG_MAX_SIZE, "LABEL=%s",
-		       label);
+	res = snprintf(iface_msg, NLMSG_MAX_SIZE, "INTERFACE=%s",
+		       iface);
 	if (NLMSG_MAX_SIZE <= res) {
 		pr_err("message too long (%d)", res);
 		return;
@@ -160,7 +160,7 @@ static void notify_netlink_uevent(const char *label, struct idletimer_tg *timer)
 		pr_err("message too long (%d)", res);
 	}
 
-	pr_debug("putting nlmsg: <%s> <%s> <%s> <%s>\n", iface_msg, label_msg, state_msg,
+	pr_debug("putting nlmsg: <%s> <%s> <%s> <%s>\n", iface_msg, state_msg,
 		 timestamp_msg, uid_msg);
 	kobject_uevent_env(idletimer_tg_kobj, KOBJ_CHANGE, envp);
 	return;
