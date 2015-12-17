@@ -77,3 +77,4 @@ obj-$(CONFIG_DM_VERITY)		+= dmverity_query.o
 obj-$(CONFIG_SEC_MODEM) += modem_if/
 
 obj-y += dualwave/
+obj-$(CONFIG_UID_CPUTIME) += uid_cputime.o
