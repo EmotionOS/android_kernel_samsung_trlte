@@ -185,9 +185,6 @@ static void __ref asmp_suspend(void)
 {
 	unsigned int cpu;
 
-	if (!hotplug_suspend)
-		return;
-
 	if (!asmp_param.suspended) {
 		mutex_lock(&asmp_param.autosmp_hotplug_mutex);
 		asmp_param.suspended = 1;
@@ -212,9 +209,6 @@ static void __ref asmp_resume(void)
 {
 	unsigned int cpu;
 	int required_reschedule = 0, required_wakeup = 0;
-
-	if (!hotplug_suspend)
-		return;
 
 	/* hotplug online cpu cores */
 	if (asmp_param.suspended) {
@@ -245,7 +239,7 @@ static void __ref asmp_resume(void)
 static int state_notifier_callback(struct notifier_block *this,
 				unsigned long event, void *data)
 {
-	if (!autosmp_enabled)
+	if (!autosmp_enabled || !hotplug_suspend)
                 return NOTIFY_OK;
 
 	switch (event) {
@@ -271,8 +265,6 @@ static void __ref cpu_up_work(struct work_struct *work)
 	for_each_cpu_not(cpu, cpu_online_mask) {
 		if (target <= num_online_cpus())
 			break;
-		if (cpu == 0)
-			continue;
 		cpu_up(cpu);
 	}
 }
