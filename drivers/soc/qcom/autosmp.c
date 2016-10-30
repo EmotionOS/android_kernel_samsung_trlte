@@ -360,8 +360,7 @@ static int hotplug_start(void)
 	}
 
 	INIT_DELAYED_WORK(&asmp_work, asmp_work_fn);
-	queue_delayed_work_on(0, asmp_workq, &asmp_work,
-				msecs_to_jiffies(asmp_param.delay));
+	reschedule_hotplug_work();
 	return ret;
 err:
 	destroy_workqueue(asmp_workq);
@@ -597,20 +596,6 @@ static int __init asmp_init(void)
 		per_cpu(asmp_cpudata, cpu).times_hotplugged = 0;
 #endif
 
-	if (autosmp_enabled) {
-		asmp_workq =
-			alloc_workqueue("autosmp_wq", WQ_HIGHPRI | WQ_FREEZABLE, 0);
-		if (!asmp_workq) {
-			pr_err("%s: Failed to allocate hotplug workqueue\n",
-				ASMP_TAG);
-			ret = -ENOMEM;
-			goto err_out;
-		}
-		INIT_DELAYED_WORK(&asmp_work, asmp_work_fn);
-		queue_delayed_work(asmp_workq, &asmp_work,
-					msecs_to_jiffies(ASMP_STARTDELAY));
-	}
-
 #ifdef CONFIG_STATE_NOTIFIER
 	asmp_param.notif.notifier_call = state_notifier_callback;
 	if (state_register_client(&asmp_param.notif)) {
@@ -639,13 +624,15 @@ static int __init asmp_init(void)
 		goto err_dev;
 	}
 
+	if (autosmp_enabled)
+		hotplug_start();
+
 	pr_info(ASMP_TAG "Init complete.\n");
 	return ret;
 
 err_dev:
-	destroy_workqueue(asmp_workq);
-err_out:
 	autosmp_enabled = 0;
 	return ret;
 }
+
 late_initcall(asmp_init);
