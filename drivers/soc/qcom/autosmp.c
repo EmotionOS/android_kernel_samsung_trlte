@@ -1,5 +1,5 @@
 /*
- * arch/arm/kernel/autosmp.c
+ * drivers/soc/qcom/autosmp.c
  *
  * automatically hotplug/unplug multiple cpu cores
  * based on cpu load and suspend state
@@ -31,7 +31,6 @@
 #ifdef CONFIG_STATE_NOTIFIER
 #include <linux/state_notifier.h>
 #endif
-#include <linux/mutex.h>
 
 #define DEBUG 0
 
@@ -43,18 +42,18 @@
 #define MIN_INPUT_INTERVAL	150 * 1000L
 #define DEFAULT_MIN_BOOST_FREQ	1728000
 
+#if DEBUG
 struct asmp_cpudata_t {
 	long long unsigned int times_hotplugged;
 };
+static DEFINE_PER_CPU(struct asmp_cpudata_t, asmp_cpudata);
+#endif
 
 static struct delayed_work asmp_work;
 static struct workqueue_struct *asmp_workq;
-static DEFINE_PER_CPU(struct asmp_cpudata_t, asmp_cpudata);
-struct notifier_block notify;
 
 static struct asmp_param_struct {
 	unsigned int delay;
-	unsigned int suspended;
 	unsigned int max_cpus;
 	unsigned int min_cpus;
 	unsigned int cpufreq_up;
@@ -63,15 +62,11 @@ static struct asmp_param_struct {
 	unsigned int cycle_down;
 	unsigned int cpus_boosted;
 	unsigned int min_boost_freq;
-	unsigned int target_cpus;
 	u64 boost_lock_dur;
 	u64 last_input;
 	struct notifier_block notif;
-	struct mutex autosmp_hotplug_mutex;
-	struct work_struct up_work;
 } asmp_param = {
 	.delay = DEFAULT_UPDATE_RATE,
-	.suspended = 0,
 	.max_cpus = CONFIG_NR_CPUS,
 	.min_cpus = 1,
 	.cpufreq_up = 95,
@@ -85,8 +80,7 @@ static struct asmp_param_struct {
 
 static u64 last_boost_time;
 static unsigned int cycle = 0;
-static int autosmp_enabled __read_mostly = 0;
-static int enable_switch = 0;
+static unsigned int autosmp_enabled = 0;
 /*
  * suspend mode, if set = 1 hotplug will sleep,
  * if set = 0, then hoplug will be active all the time.
@@ -147,7 +141,8 @@ static void __cpuinit asmp_work_fn(struct work_struct *work)
 		if ((nr_cpu_online < asmp_param.max_cpus) &&
 		    (cycle >= asmp_param.cycle_up)) {
 			cpu = cpumask_next_zero(0, cpu_online_mask);
-			cpu_up(cpu);
+			if (cpu_is_offline(cpu))
+				cpu_up(cpu);
 			cycle = 0;
 #if DEBUG
 			pr_info(ASMP_TAG"CPU [%d] On  | Mask [%d%d%d%d]\n",
@@ -181,59 +176,35 @@ reschedule:
 }
 
 #ifdef CONFIG_STATE_NOTIFIER
-static void __ref asmp_suspend(void)
+static void asmp_suspend(void)
 {
 	unsigned int cpu;
 
-	if (!asmp_param.suspended) {
-		mutex_lock(&asmp_param.autosmp_hotplug_mutex);
-		asmp_param.suspended = 1;
-		mutex_unlock(&asmp_param.autosmp_hotplug_mutex);
+	/* Flush hotplug workqueue */
+	flush_workqueue(asmp_workq);
+	cancel_delayed_work_sync(&asmp_work);
 
-		/* Flush hotplug workqueue */
-		flush_workqueue(asmp_workq);
-		cancel_delayed_work_sync(&asmp_work);
-
-		/* unplug online cpu cores */
-		for_each_online_cpu(cpu) {
-			if (cpu == 0)
-				continue;
+	/* unplug online cpu cores */
+	for_each_possible_cpu(cpu)
+		if (cpu != 0 && cpu_online(cpu))
 			cpu_down(cpu);
-		}
 
-		pr_info(ASMP_TAG"Screen -> Off. Suspended.\n");
-	}
+	pr_info(ASMP_TAG"Screen -> Off. Suspended.\n");
 }
 
 static void __ref asmp_resume(void)
 {
 	unsigned int cpu;
-	int required_reschedule = 0, required_wakeup = 0;
 
-	/* hotplug online cpu cores */
-	if (asmp_param.suspended) {
-		mutex_lock(&asmp_param.autosmp_hotplug_mutex);
-		asmp_param.suspended = 0;
-		mutex_unlock(&asmp_param.autosmp_hotplug_mutex);
-		required_wakeup = 1;
-		required_reschedule = 1;
-		INIT_DELAYED_WORK(&asmp_work, asmp_work_fn);
-		pr_info(ASMP_TAG"Screen -> On. Resumed.\n");
-	}
-
-	if (required_wakeup) {
-		/* Fire up all CPUs */
-		for_each_cpu_not(cpu, cpu_online_mask) {
-			if (cpu == 0)
-				continue;
+	/* Fire up all CPUs */
+	for_each_possible_cpu(cpu)
+		if (!cpu_online(cpu))
 			cpu_up(cpu);
-		}
-		pr_info(ASMP_TAG" wakeup boosted.\n");
-	}
 
-	/* Resume hotplug workqueue if required */
-	if (required_reschedule)
-		reschedule_hotplug_work();
+	/* Resume hotplug workqueue */
+	INIT_DELAYED_WORK(&asmp_work, asmp_work_fn);
+	reschedule_hotplug_work();
+	pr_info(ASMP_TAG"Screen -> On. Resumed.\n");
 }
 
 static int state_notifier_callback(struct notifier_block *this,
@@ -257,21 +228,9 @@ static int state_notifier_callback(struct notifier_block *this,
 }
 #endif
 
-static void __ref cpu_up_work(struct work_struct *work)
+static void __ref online_cpu(unsigned int target)
 {
-	int cpu;
-	unsigned int target = asmp_param.target_cpus;
-
-	for_each_cpu_not(cpu, cpu_online_mask) {
-		if (target <= num_online_cpus())
-			break;
-		cpu_up(cpu);
-	}
-}
-
-static void online_cpu(unsigned int target)
-{
-	unsigned int online_cpus;
+	unsigned int online_cpus, cpu;
 
 	online_cpus = num_online_cpus();
 
@@ -283,8 +242,9 @@ static void online_cpu(unsigned int target)
 			online_cpus >= asmp_param.max_cpus)
 		return;
 
-	asmp_param.target_cpus = target;
-	queue_work_on(0, asmp_workq, &asmp_param.up_work);
+	for_each_possible_cpu(cpu)
+		if (cpu_is_offline(cpu) && num_online_cpus() < target)
+			cpu_up(cpu);
 }
 
 static void autosmp_input_event(struct input_handle *handle, unsigned int type,
@@ -292,10 +252,13 @@ static void autosmp_input_event(struct input_handle *handle, unsigned int type,
 {
 	u64 now;
 
-	if (asmp_param.suspended)
-		return;
 	if (!autosmp_enabled)
 		return;
+
+#ifdef CONFIG_STATE_NOTIFIER
+	if (state_suspended)
+		return;
+#endif
 
 	now = ktime_to_us(ktime_get());
 	asmp_param.last_input = now;
@@ -385,79 +348,71 @@ static int hotplug_start(void)
 	if (!asmp_workq) {
 		pr_err("%s: Failed to allocate hotplug workqueue\n",
 					ASMP_TAG);
-		autosmp_enabled = 0;
 		ret = -ENOMEM;
-		goto quit;
+		goto err_wq;
 	}
 
 	ret = input_register_handler(&autosmp_input_handler);
 	if (ret) {
 		pr_err("%s: Failed to register input handler: %d\n",
 		       ASMP_TAG, ret);
-		goto quit;
+		goto err;
 	}
 
 	INIT_DELAYED_WORK(&asmp_work, asmp_work_fn);
-	INIT_WORK(&asmp_param.up_work, cpu_up_work);
 	queue_delayed_work_on(0, asmp_workq, &asmp_work,
 				msecs_to_jiffies(asmp_param.delay));
 	return ret;
-quit:
+err:
 	destroy_workqueue(asmp_workq);
+err_wq:
+	autosmp_enabled = 0;
 	return ret;
 }
 
-static void hotplug_stop(void)
+static void __ref hotplug_stop(void)
 {
 	int cpu;
 
 	input_unregister_handler(&autosmp_input_handler);
 	flush_workqueue(asmp_workq);
-	cancel_work_sync(&asmp_param.up_work);
 	cancel_delayed_work_sync(&asmp_work);
 	destroy_workqueue(asmp_workq);
 
-	/* Put all sibling cores to sleep */
-	for_each_online_cpu(cpu) {
-		if (cpu == 0)
-			continue;
-		cpu_down(cpu);
-	}
+	/* Wake up all the sibling cores */
+	for_each_possible_cpu(cpu)
+		if (cpu_is_offline(cpu))
+			cpu_up(cpu);
 }
 
 static int __cpuinit set_enabled(const char *val, const struct kernel_param *kp)
 {
 	int ret = 0;
-	unsigned int cpu;
+	unsigned int i;
 
-	ret = param_set_bool(val, kp);
-	if (autosmp_enabled) {
-		if (!enable_switch) {
-			enable_switch = 1;
-			hotplug_start();
-			pr_info(ASMP_TAG "Enabled.\n");
-		} else
-			pr_info(ASMP_TAG "Already Enabled.\n");
-	} else {
-		if (enable_switch) {
-			enable_switch = 0;
-			hotplug_stop();
-			/* Put all sibling cores to sleep */
-			for_each_online_cpu(cpu) {
-				if (cpu == 0)
-					continue;
-				cpu_down(cpu);
-			}
-			pr_info(ASMP_TAG "Disabled.\n");
-		} else
-			pr_info(ASMP_TAG "Already Disabled.\n");
-	}
+	ret = kstrtouint(val, 10, &i);
+	if (ret)
+		return -EINVAL;
+
+	if (i < 0 || i > 1)
+		return -EINVAL;
+		
+	if (i == autosmp_enabled)
+		return ret;
+
+	autosmp_enabled = i;
+
+	if (autosmp_enabled)
+		hotplug_start();
+	else
+		hotplug_stop();
+
 	return ret;
 }
 
 static struct kernel_param_ops module_ops = {
 	.set = set_enabled,
-	.get = param_get_bool,
+	.get = param_get_uint,
 };
 
 module_param_cb(autosmp_enabled, &module_ops, &autosmp_enabled, 0644);
@@ -634,12 +589,13 @@ static struct attribute_group asmp_stats_attr_group = {
 
 static int __init asmp_init(void)
 {
-	unsigned int cpu;
-	int rc, ret = 0;
+	int ret = 0;
 
 	asmp_param.max_cpus = nr_cpu_ids;
+#if DEBUG
 	for_each_possible_cpu(cpu)
 		per_cpu(asmp_cpudata, cpu).times_hotplugged = 0;
+#endif
 
 	if (autosmp_enabled) {
 		asmp_workq =
@@ -650,7 +606,6 @@ static int __init asmp_init(void)
 			ret = -ENOMEM;
 			goto err_out;
 		}
-		enable_switch = 1;
 		INIT_DELAYED_WORK(&asmp_work, asmp_work_fn);
 		queue_delayed_work(asmp_workq, &asmp_work,
 					msecs_to_jiffies(ASMP_STARTDELAY));
@@ -665,18 +620,16 @@ static int __init asmp_init(void)
 	}
 #endif
 
-	mutex_init(&asmp_param.autosmp_hotplug_mutex);
-
 	asmp_kobject = kobject_create_and_add("autosmp", kernel_kobj);
 	if (asmp_kobject) {
-		rc = sysfs_create_group(asmp_kobject, &asmp_attr_group);
-		if (rc) {
+		ret = sysfs_create_group(asmp_kobject, &asmp_attr_group);
+		if (ret) {
 			pr_warn(ASMP_TAG "sysfs: ERROR, create sysfs group.");
 			goto err_dev;
 		}
 #if DEBUG
-		rc = sysfs_create_group(asmp_kobject, &asmp_stats_attr_group);
-		if (rc) {
+		ret = sysfs_create_group(asmp_kobject, &asmp_stats_attr_group);
+		if (ret) {
 			pr_warn(ASMP_TAG "sysfs: ERROR, create sysfs stats group.");
 			goto err_dev;
 		}
