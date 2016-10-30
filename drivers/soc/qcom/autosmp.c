@@ -91,7 +91,7 @@ static int enable_switch = 0;
  * suspend mode, if set = 1 hotplug will sleep,
  * if set = 0, then hoplug will be active all the time.
  */
-static unsigned int hotplug_suspend = 0;
+static unsigned int hotplug_suspend = 1;
 module_param_named(hotplug_suspend, hotplug_suspend, uint, 0644);
 
 static void reschedule_hotplug_work(void)
@@ -203,12 +203,6 @@ static void __ref asmp_suspend(void)
 				continue;
 			cpu_down(cpu);
 		}
-		/*
-		 * Enabled core 1,2 so we will have 0-2 online
-		 * when screen is OFF to reduce system lags and reboots.
-		 */
-		cpu_up(1);
-		cpu_up(2);
 
 		pr_info(ASMP_TAG"Screen -> Off. Suspended.\n");
 	}
