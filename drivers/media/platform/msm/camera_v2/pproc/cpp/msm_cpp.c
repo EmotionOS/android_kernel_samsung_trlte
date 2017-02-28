@@ -1018,7 +1018,7 @@ static int cpp_open_node(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 		return -ENODEV;
 	}
 
-	CPP_DBG("open %d %p\n", i, &fh->vfh);
+	CPP_DBG("open %d %pK\n", i, &fh->vfh);
 	cpp_dev->cpp_open_cnt++;
 	if (cpp_dev->cpp_open_cnt == 1) {
 
@@ -1048,7 +1048,7 @@ static int cpp_close_node(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 	struct msm_device_queue *eventData_q = NULL;
 
 	if (!cpp_dev) {
-		pr_err("failed: cpp_dev %p\n", cpp_dev);
+		pr_err("failed: cpp_dev %pK\n", cpp_dev);
 		return -EINVAL;
 	}
 	mutex_lock(&cpp_dev->mutex);
@@ -1228,7 +1228,7 @@ static void msm_cpp_do_timeout_work(struct work_struct *work)
 		jiffies);
 	if (!work || !this_frame ||
 		cpp_timer.data.cpp_dev->state != CPP_STATE_ACTIVE) {
-		pr_err("Invalid work:%p or this_frame:%p state:%d\n", work,
+		pr_err("Invalid work:%pK or this_frame:%p state:%d\n", work,
 			this_frame, cpp_timer.data.cpp_dev->state);
 		mutex_unlock(&cpp_timer.data.cpp_dev->mutex);
 		return;
@@ -1608,7 +1608,10 @@ long msm_cpp_subdev_ioctl(struct v4l2_subdev *sd,
 		pr_err("cpp_dev is null\n");
 		return -EINVAL;
 	}
-
+	if (_IOC_DIR(cmd) == _IOC_NONE) {
+		pr_err("Invalid ioctl/subdev cmd %u", cmd);
+		return -EINVAL;
+	}
 	mutex_lock(&cpp_dev->mutex);
 	CPP_DBG("E cmd: 0x%x\n", cmd);
 	switch (cmd) {

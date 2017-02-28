@@ -1162,14 +1162,16 @@ static int qseecom_unload_app(struct qseecom_dev_handle *data,
 		if (ret) {
 			pr_err("scm_call to unload app (id = %d) failed\n",
 								req.app_id);
-			return -EFAULT;
+			ret = -EFAULT;
+			goto unload_exit;
 		} else {
 			pr_warn("App id %d now unloaded\n", req.app_id);
 		}
 		if (resp.result == QSEOS_RESULT_FAILURE) {
 			pr_err("app (%d) unload_failed!!\n",
 					data->client.app_id);
-			return -EFAULT;
+			ret = -EFAULT;
+			goto unload_exit;
 		}
 		if (resp.result == QSEOS_RESULT_SUCCESS)
 			pr_info("App (%d) is unloaded!!\n",
@@ -1180,7 +1182,7 @@ static int qseecom_unload_app(struct qseecom_dev_handle *data,
 			if (ret) {
 				pr_err("process_incomplete_cmd fail err: %d\n",
 									ret);
-				return ret;
+				goto unload_exit;
 			}
 		}
 	}
@@ -1234,7 +1236,7 @@ int __qseecom_process_rpmb_svc_cmd(struct qseecom_dev_handle *data_ptr,
 	void *req_buf = NULL;
 
 	if ((req_ptr == NULL) || (send_svc_ireq_ptr == NULL)) {
-		pr_err("Error with pointer: req_ptr = %p, send_svc_ptr = %p\n",
+		pr_err("Error with pointer: req_ptr = %pK, send_svc_ptr = %pK\n",
 			req_ptr, send_svc_ireq_ptr);
 		return -EINVAL;
 	}
@@ -2521,7 +2523,7 @@ int qseecom_send_command(struct qseecom_handle *handle, void *send_buf,
 	if (ret)
 		return ret;
 
-	pr_debug("sending cmd_req->rsp size: %u, ptr: 0x%p\n",
+	pr_debug("sending cmd_req->rsp size: %u, ptr: 0x%pK\n",
 			req.resp_len, req.resp_buf);
 	return ret;
 }

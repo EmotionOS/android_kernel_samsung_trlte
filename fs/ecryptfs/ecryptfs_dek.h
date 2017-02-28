@@ -61,7 +61,7 @@ void ecryptfs_fs_request_callback(int opcode, int ret, unsigned long ino);
 
 typedef struct _dek_arg_sdp_info {
     int engine_id;
-	int sdp_enabled;	
+	int sdp_enabled;
 	int is_sensitive;
 	int is_chamber;
 	unsigned int type;

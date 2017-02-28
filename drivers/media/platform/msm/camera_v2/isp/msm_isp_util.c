@@ -307,14 +307,14 @@ static int msm_isp_get_max_clk_rate(struct vfe_device *vfe_dev, long *rate)
 	long          round_rate = 0;
 
 	if (!vfe_dev || !rate) {
-		pr_err("%s:%d failed: vfe_dev %p rate %p\n", __func__, __LINE__,
+		pr_err("%s:%d failed: vfe_dev %pK rate %pK\n", __func__, __LINE__,
 			vfe_dev, rate);
 		return -EINVAL;
 	}
 
 	*rate = 0;
 	if (!vfe_dev->hw_info) {
-		pr_err("%s:%d failed: vfe_dev->hw_info %p\n", __func__,
+		pr_err("%s:%d failed: vfe_dev->hw_info %pK\n", __func__,
 			__LINE__, vfe_dev->hw_info);
 		return -EINVAL;
 	}
@@ -442,10 +442,10 @@ long msm_isp_ioctl(struct v4l2_subdev *sd,
 
 	if (!vfe_dev || !vfe_dev->vfe_vbif_base ||
 		!vfe_dev->vfe_base) {
-		pr_err("%s:%d failed: invalid params %p\n",
+		pr_err("%s:%d failed: invalid params %pK\n",
 			__func__, __LINE__, vfe_dev);
 		if (vfe_dev)
-			pr_err("%s:%d failed %p %p\n", __func__,
+			pr_err("%s:%d failed %pK %pK\n", __func__,
 				__LINE__, vfe_dev->vfe_base,
 				vfe_dev->vfe_vbif_base);
 		return -EINVAL;
@@ -566,13 +566,13 @@ static int msm_isp_send_hw_cmd(struct vfe_device *vfe_dev,
 	uint32_t *cfg_data, uint32_t cmd_len)
 {
 	if (!vfe_dev || !reg_cfg_cmd) {
-		pr_err("%s:%d failed: vfe_dev %p reg_cfg_cmd %p\n", __func__,
+		pr_err("%s:%d failed: vfe_dev %pK reg_cfg_cmd %pK\n", __func__,
 			__LINE__, vfe_dev, reg_cfg_cmd);
 		return -EINVAL;
 	}
 	if ((reg_cfg_cmd->cmd_type != VFE_CFG_MASK) &&
 		(!cfg_data || !cmd_len)) {
-		pr_err("%s:%d failed: cmd type %d cfg_data %p cmd_len %d\n",
+		pr_err("%s:%d failed: cmd type %d cfg_data %pK cmd_len %d\n",
 			__func__, __LINE__, reg_cfg_cmd->cmd_type, cfg_data,
 			cmd_len);
 		return -EINVAL;
@@ -615,7 +615,8 @@ static int msm_isp_send_hw_cmd(struct vfe_device *vfe_dev,
 	case VFE_READ_DMI_16BIT:
 	case VFE_READ_DMI_32BIT:
 	case VFE_READ_DMI_64BIT: {
-		if (reg_cfg_cmd->cmd_type == VFE_WRITE_DMI_64BIT) {
+			if (reg_cfg_cmd->cmd_type == VFE_WRITE_DMI_64BIT ||
+	                    reg_cfg_cmd->cmd_type == VFE_READ_DMI_64BIT) {
 			if ((reg_cfg_cmd->u.dmi_info.hi_tbl_offset <=
 				reg_cfg_cmd->u.dmi_info.lo_tbl_offset) ||
 				(reg_cfg_cmd->u.dmi_info.hi_tbl_offset -
@@ -899,7 +900,7 @@ int msm_isp_proc_cmd_list(struct vfe_device *vfe_dev, void *arg)
 	struct msm_vfe_cfg_cmd_list cmd, cmd_next;
 
 	if (!vfe_dev || !arg) {
-		pr_err("%s:%d failed: vfe_dev %p arg %p", __func__, __LINE__,
+		pr_err("%s:%d failed: vfe_dev %pK arg %pK", __func__, __LINE__,
 			vfe_dev, arg);
 		return -EINVAL;
 	}
@@ -1479,7 +1480,7 @@ int msm_isp_open_node(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 	}
 
 	if (vfe_dev->vfe_base || vfe_dev->vfe_vbif_base) {
-		pr_err("%s:%d invalid params cnt %d base %p %p\n", __func__,
+		pr_err("%s:%d invalid params cnt %d base %pK %pK\n", __func__,
 			__LINE__, vfe_dev->vfe_open_cnt, vfe_dev->vfe_base,
 			vfe_dev->vfe_vbif_base);
 		vfe_dev->vfe_open_cnt = 0;
